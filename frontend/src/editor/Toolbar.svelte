@@ -19,7 +19,7 @@
     Table,
     FileDown,
     FileUp,
-    StickyNote,
+    NotebookPen,
     ChevronDown,
   } from "lucide-svelte";
   import {
@@ -307,7 +307,7 @@
             }}
             title="Notes"
           >
-            <StickyNote size={16} />
+            <NotebookPen size={16} />
             <ChevronDown size={12} class="dropdown-chevron" />
           </button>
           {#if notesDropdownOpen}
@@ -319,7 +319,7 @@
                   notesDropdownOpen = false;
                 }}
               >
-                <StickyNote size={14} />
+                <NotebookPen size={14} />
                 <span>Insert Note</span>
               </button>
               <button

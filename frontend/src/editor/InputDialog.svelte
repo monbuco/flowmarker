@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { X, Link, Table, Image, Code, Quote, FileText, StickyNote } from "lucide-svelte";
+  import { X, Link, Table, Image, Code, Quote, FileText, NotebookPen } from "lucide-svelte";
   import { dialogStore, type DialogState } from "./dialogStore";
 
   let dialogState: DialogState = $state({ visible: false, config: null, resolve: null });
@@ -12,7 +12,7 @@
     if (titleLower === "image") return Image;
     if (titleLower === "code") return Code;
     if (titleLower === "quote") return Quote;
-    if (titleLower === "note" || titleLower === "notes") return StickyNote;
+    if (titleLower === "note" || titleLower === "notes") return NotebookPen;
     return FileText; // Default icon
   }
 
@@ -95,7 +95,7 @@
             {:else if iconName === "quote"}
               <Quote size={16} class="dialog-title-icon" />
             {:else if iconName === "note" || iconName === "notes"}
-              <StickyNote size={16} class="dialog-title-icon" />
+              <NotebookPen size={16} class="dialog-title-icon" />
             {:else}
               <FileText size={16} class="dialog-title-icon" />
             {/if}
