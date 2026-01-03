@@ -1,0 +1,7 @@
+{
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "tauri": "tauri dev",
+    "build": "cd frontend && npm run build && tauri build"
+  }
+}

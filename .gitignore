@@ -1,0 +1,66 @@
+############################
+# Global / Logs
+############################
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+############################
+# Node / Frontend (Vite + Svelte)
+############################
+node_modules/
+frontend/node_modules/
+
+dist/
+frontend/dist/
+frontend/dist-ssr/
+
+.vite/
+frontend/.vite/
+
+############################
+# Environment / Local files
+############################
+*.local
+.env
+.env.*
+
+############################
+# Editor / IDE
+############################
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+############################
+# OS
+############################
+.DS_Store
+Thumbs.db
+
+############################
+# Tauri / Rust
+############################
+src-tauri/target/
+target/
+
+# Cargo generated schemas (optional)
+src-tauri/gen/schemas/
+
+############################
+# Tauri build artifacts (just in case)
+############################
+*.app
+*.exe
+*.msi
+*.dmg
+*.deb
+*.rpm
