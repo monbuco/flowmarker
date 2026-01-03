@@ -8,6 +8,7 @@
     import { columnResizing, tableEditing } from "prosemirror-tables";
     import { TextSelection } from "prosemirror-state";
     import { Fragment } from "prosemirror-model";
+    import { splitListItem, liftListItem } from "prosemirror-schema-list";
   
     import { schema } from "./schema";
     import { buildInputRules } from "./inputRules";
@@ -45,6 +46,11 @@
           "Mod-z": undo,
           "Mod-y": redo,
           "Shift-Mod-z": redo,
+          // Handle Shift+Enter for line breaks (let default behavior handle it)
+          "Shift-Enter": (state: EditorState, dispatch: any) => {
+            // Return false to allow default behavior (insert hard break/newline)
+            return false;
+          },
           // Markdown operations
           "Shift-Mod-v": (state: EditorState, dispatch: any) => {
             if (!view) return false;
@@ -68,7 +74,43 @@
           "Enter": (state: EditorState, dispatch: any) => {
             const { $from } = state.selection;
             
-            // First, check if we're inside a code block
+            // First, check if we're inside a list item
+            let listItemDepth = -1;
+            for (let d = $from.depth; d > 0; d--) {
+              const node = $from.node(d);
+              if (node.type === schema.nodes.list_item) {
+                listItemDepth = d;
+                break;
+              }
+            }
+            
+            // If we're inside a list item
+            if (listItemDepth >= 0) {
+              // Get the list item node to check its content
+              const listItemNode = $from.node(listItemDepth);
+              const listItemStart = $from.start(listItemDepth);
+              const listItemEnd = $from.end(listItemDepth);
+              
+              // Get text content of the entire list item (including nested content)
+              const listItemText = state.doc.textBetween(listItemStart + 1, listItemEnd - 1).trim();
+              
+              // Check if the list item is empty (no text content)
+              if (listItemText === "") {
+                // Empty list item - exit the list (lift out)
+                const liftCommand = liftListItem(schema.nodes.list_item);
+                if (liftCommand(state, dispatch)) {
+                  return true;
+                }
+              } else {
+                // Non-empty list item - split it to create a new item
+                const splitCommand = splitListItem(schema.nodes.list_item);
+                if (splitCommand(state, dispatch)) {
+                  return true;
+                }
+              }
+            }
+            
+            // Check if we're inside a code block
             let codeBlockPos = -1;
             let codeBlockNode = null;
             for (let d = $from.depth; d > 0; d--) {
