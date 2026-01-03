@@ -118,9 +118,9 @@
     }
   });
 
-  function handleCommand(command: (view: EditorView) => boolean) {
+  async function handleCommand(command: (view: EditorView) => boolean | Promise<boolean>) {
     if (!view) return;
-    const result = command(view);
+    const result = await command(view);
     if (result) {
       view.focus();
       forceUpdate();

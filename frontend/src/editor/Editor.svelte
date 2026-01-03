@@ -15,6 +15,7 @@
     import Toolbar from "./Toolbar.svelte";
     import LinkEditor from "./LinkEditor.svelte";
     import TableMenu from "./TableMenu.svelte";
+    import InputDialog from "./InputDialog.svelte";
   
     let editorEl: HTMLDivElement;
     let view: EditorView | null = null;
@@ -106,9 +107,9 @@
             }
             
             // Check if current line is "---" and convert to horizontal rule
-            const lineStart = $from.start($from.depth);
-            const lineEnd = $from.end($from.depth);
-            const lineText = state.doc.textBetween(lineStart, lineEnd).trim();
+            let lineStart = $from.start($from.depth);
+            let lineEnd = $from.end($from.depth);
+            let lineText = state.doc.textBetween(lineStart, lineEnd).trim();
             
             // Check for fenced code block: ```language
             const codeBlockMatch = lineText.match(/^```(\w*)$/);
@@ -174,6 +175,43 @@
                 }
                 if (dispatch) dispatch(tr);
                 return true;
+              }
+            }
+
+            // Command-based table insertion
+            // Check for @table command or header row shortcut
+            if (!view) return false;
+            
+            // Check for @table command
+            if (lineText === "@table" && schema.nodes.table) {
+              // Handle async command - schedule it
+              (async () => {
+                const { processCommand } = await import("./commands");
+                await processCommand(view, "table");
+              })();
+              // Return true to prevent default Enter behavior
+              return true;
+            }
+            
+            // Check for header row shortcut: | header | header | + Enter
+            // This opens the table dialog with column count pre-filled
+            const tableHeaderPattern = /^\|.+\|/;
+            if (tableHeaderPattern.test(lineText) && schema.nodes.table) {
+              // Count columns from the header row
+              const cells = lineText.split('|').map(c => c.trim()).filter(c => c);
+              if (cells.length >= 2) {
+                const paragraphNode = $from.node($from.depth);
+                if (paragraphNode.type === schema.nodes.paragraph) {
+                  const paragraphStart = $from.before($from.depth);
+                  const paragraphEnd = $from.after($from.depth);
+                  // Handle async command - schedule it
+                  (async () => {
+                    const { insertTableFromHeaderRow } = await import("./commands");
+                    await insertTableFromHeaderRow(view, cells.length, paragraphStart, paragraphEnd);
+                  })();
+                  // Return true to prevent default Enter behavior
+                  return true;
+                }
               }
             }
             
@@ -369,6 +407,7 @@
         {#if view}
           <LinkEditor {view} />
           <TableMenu {view} />
+          <InputDialog />
         {/if}
       </div>
     </div>

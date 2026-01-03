@@ -224,6 +224,10 @@ export function buildMarkdownInputRules(schema: Schema): InputRule[] {
     );
   }
 
+  // Tables are now handled via command system (@table) or header row shortcut
+  // No auto-conversion of markdown table syntax while typing
+  // Tables are still parsed from paste operations via markdownParser
+
   return rules;
 }
 

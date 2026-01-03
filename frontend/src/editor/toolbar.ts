@@ -13,6 +13,7 @@ import {
   deleteColumn,
 } from "prosemirror-tables";
 import { schema } from "./schema";
+import { dialogStore } from "./dialogStore";
 
 // Text formatting commands
 export function toggleBold(view: EditorView) {
@@ -161,7 +162,7 @@ export function toggleOrderedList(view: EditorView) {
 }
 
 // Link command - improved to handle editing existing links
-export function insertLink(view: EditorView) {
+export async function insertLink(view: EditorView): Promise<boolean> {
   const { state, dispatch } = view;
   
   // Check if link mark exists
@@ -186,11 +187,12 @@ export function insertLink(view: EditorView) {
   // Get selected text
   const selectedText = state.doc.textBetween(from, to, " ");
   
-  // Prompt for URL (pre-fill if editing)
-  const newUrl = prompt(
-    existingLink ? `Edit link URL:\nCurrent: ${url}` : "Enter URL:",
-    url || "https://"
-  );
+  // Show dialog for URL
+  const newUrl = await dialogStore.show({
+    title: "link",
+    placeholder: "Enter URL",
+    defaultValue: url || "https://",
+  });
   
   if (!newUrl || newUrl.trim() === "") {
     // If empty URL and we have a link, remove it
@@ -204,7 +206,11 @@ export function insertLink(view: EditorView) {
 
   // If no text is selected and we're not editing, insert link text
   if (from === to && !existingLink) {
-    const linkText = prompt("Enter link text:", "link");
+    const linkText = await dialogStore.show({
+      title: "link",
+      placeholder: "Enter link text",
+      defaultValue: "link",
+    });
     if (!linkText) return false;
     
     const tr = state.tr
@@ -225,9 +231,15 @@ export function insertLink(view: EditorView) {
 }
 
 // Image command
-export function insertImage(view: EditorView) {
+export async function insertImage(view: EditorView): Promise<boolean> {
   const { state, dispatch } = view;
-  const url = prompt("Enter image URL:");
+  
+  const url = await dialogStore.show({
+    title: "image",
+    placeholder: "Enter image URL",
+    defaultValue: "https://",
+  });
+  
   if (!url) return false;
 
   // Check if image node exists in schema
@@ -247,7 +259,7 @@ export function insertImage(view: EditorView) {
 }
 
 // Table command - prompt for rows and columns
-export function insertTable(view: EditorView) {
+export async function insertTable(view: EditorView): Promise<boolean> {
   const { state, dispatch } = view;
   
   // Check if table nodes exist in schema
@@ -256,17 +268,37 @@ export function insertTable(view: EditorView) {
     return false;
   }
 
-  // Prompt for rows and columns
-  const rowsInput = prompt("Number of rows:", "3");
-  const colsInput = prompt("Number of columns:", "3");
+  // Show dialog for rows
+  const rowsInput = await dialogStore.show({
+    title: "table",
+    placeholder: "Number of rows (1-20)",
+    defaultValue: "3",
+    type: "number",
+    min: 1,
+    max: 20,
+  });
   
-  if (!rowsInput || !colsInput) return false;
+  if (!rowsInput) return false;
   
   const rows = parseInt(rowsInput, 10);
-  const cols = parseInt(colsInput, 10);
+  if (isNaN(rows) || rows < 1 || rows > 20) {
+    return false;
+  }
   
-  if (isNaN(rows) || isNaN(cols) || rows < 1 || cols < 1 || rows > 20 || cols > 20) {
-    alert("Please enter valid numbers between 1 and 20");
+  // Show dialog for columns
+  const colsInput = await dialogStore.show({
+    title: "table",
+    placeholder: "Number of columns (1-20)",
+    defaultValue: "3",
+    type: "number",
+    min: 1,
+    max: 20,
+  });
+  
+  if (!colsInput) return false;
+  
+  const cols = parseInt(colsInput, 10);
+  if (isNaN(cols) || cols < 1 || cols > 20) {
     return false;
   }
 
