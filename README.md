@@ -1,4 +1,4 @@
-# FlowMarker
+# FlowMarker — write with freedom, write with flow.
 
 FlowMarker is a desktop-first writing environment focused on clean content,
 long-term knowledge preservation, and distraction-free writing.
