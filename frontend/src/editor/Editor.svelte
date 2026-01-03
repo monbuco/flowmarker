@@ -18,6 +18,7 @@
     import TableMenu from "./TableMenu.svelte";
     import InputDialog from "./InputDialog.svelte";
     import NotePopover from "./NotePopover.svelte";
+    import NotesSection from "./NotesSection.svelte";
   
     let editorEl: HTMLDivElement;
     let view: EditorView | null = null;
@@ -561,6 +562,11 @@
           <NotePopover {view} />
         {/if}
       </div>
+      <div class="notes-wrapper">
+        {#if view}
+          <NotesSection {view} />
+        {/if}
+      </div>
     </div>
   </div>
   
@@ -581,6 +587,8 @@
   padding-top: 120px; /* Add extra padding at top to account for fixed toolbar */
   background-color: #ffffff;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
 }
 
 .editor-container {
@@ -588,6 +596,11 @@
   width: 100%;
   position: relative;
   display: block;
+}
+
+.notes-wrapper {
+  margin-top: auto;
+  padding-top: 2em;
 }
 
 :global(.editor-container > .ProseMirror) {
@@ -691,30 +704,52 @@
   text-decoration: none;
 }
 
-:global(.editor-container .ProseMirror div.note-content) {
-  margin-top: 1em;
-  padding-left: 1.5em;
-  font-size: 0.9em;
-  color: #666;
-  display: flex;
-  align-items: flex-start;
+/* Note highlighting animation */
+:global(.note-highlight) {
+  animation: noteHighlight 2s ease-in-out;
+  background-color: rgba(255, 255, 0, 0.2);
+  border-radius: 2px;
+  padding: 2px 4px;
+  margin: -2px -4px;
 }
 
-:global(.editor-container .ProseMirror div.note-content .note-number) {
-  font-weight: 600;
-  color: #333;
-  margin-right: 0.5em;
-  flex-shrink: 0;
+@keyframes noteHighlight {
+  0% {
+    background-color: rgba(255, 255, 0, 0);
+  }
+  25% {
+    background-color: rgba(255, 255, 0, 0.3);
+  }
+  50% {
+    background-color: rgba(255, 255, 0, 0.2);
+  }
+  100% {
+    background-color: rgba(255, 255, 0, 0);
+  }
 }
 
-:global(.editor-container .ProseMirror div.note-content .note-text) {
-  flex: 1;
+@media (prefers-color-scheme: dark) {
+  :global(.note-highlight) {
+    background-color: rgba(255, 255, 0, 0.15);
+  }
+  
+  @keyframes noteHighlight {
+    0% {
+      background-color: rgba(255, 255, 0, 0);
+    }
+    25% {
+      background-color: rgba(255, 255, 0, 0.25);
+    }
+    50% {
+      background-color: rgba(255, 255, 0, 0.15);
+    }
+    100% {
+      background-color: rgba(255, 255, 0, 0);
+    }
+  }
 }
 
-:global(.editor-container .ProseMirror div.note-content .note-text p) {
-  margin: 0;
-  display: inline;
-}
+/* Note: note-content styles removed - notes are now rendered outside ProseMirror */
 
 :global(.editor-container .ProseMirror table) {
   border-collapse: collapse;

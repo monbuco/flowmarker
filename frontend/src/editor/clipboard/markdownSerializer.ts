@@ -7,58 +7,133 @@
 
 import { Node as ProseMirrorNode, Fragment } from "prosemirror-model";
 import { Schema } from "prosemirror-model";
+import { EditorView } from "prosemirror-view";
+import { notesStore } from "../notesStore";
+import { findNoteReferences } from "../notes";
+
+/**
+ * Find all note references in a Fragment
+ */
+function findNoteReferencesInFragment(fragment: Fragment, schema: Schema): Array<{ node: ProseMirrorNode; pos: number; noteId: string; number: number }> {
+  const refs: Array<{ node: ProseMirrorNode; pos: number; noteId: string; number: number }> = [];
+  
+  // Iterate through all nodes in the fragment
+  fragment.forEach((node) => {
+    // Check if the node itself is a note reference
+    if (node.type === schema.nodes.note_ref) {
+      refs.push({
+        node,
+        pos: 0, // Position doesn't matter for fragment search
+        noteId: node.attrs.noteId,
+        number: node.attrs.number,
+      });
+    }
+    
+    // Recursively search in node content
+    if (node.content && node.content.size > 0) {
+      node.descendants((childNode, pos) => {
+        if (childNode.type === schema.nodes.note_ref) {
+          refs.push({
+            node: childNode,
+            pos,
+            noteId: childNode.attrs.noteId,
+            number: childNode.attrs.number,
+          });
+        }
+      });
+    }
+  });
+  
+  return refs;
+}
 
 /**
  * Serializes a ProseMirror node or fragment to Markdown
  */
-export function serializeToMarkdown(node: ProseMirrorNode | Fragment, schema: Schema): string {
+export function serializeToMarkdown(node: ProseMirrorNode | Fragment, schema: Schema, view?: EditorView | null): string {
+  let mainContent: string;
+  let doc: ProseMirrorNode | null = null;
+  let fragmentToCheck: Fragment | null = null;
+  
   if (node instanceof Fragment) {
-    const mainContent = serializeFragment(node, schema);
-    // Collect notes from the fragment
-    const notes = collectNotes(node, schema);
-    if (notes.length > 0) {
-      return mainContent + "\n\n" + notes.join("\n");
+    // For fragments (selected content), check notes within the fragment itself
+    fragmentToCheck = node;
+    // Serialize the fragment
+    try {
+      mainContent = serializeFragment(node, schema);
+      // If serialization returned empty, there might be an issue
+      if (!mainContent || mainContent.trim() === "") {
+        console.warn("Fragment serialization returned empty content");
+      }
+    } catch (error) {
+      console.error("Error serializing fragment:", error, node);
+      return "";
     }
-    return mainContent;
+    // Also get the full document for note lookup if we have a view
+    if (view) {
+      doc = view.state.doc;
+    } else {
+      // No view, just return fragment content without notes
+      return mainContent;
+    }
+  } else {
+    mainContent = serializeNode(node, schema);
+    if (node.type.name === "doc") {
+      doc = node;
+    } else if (view) {
+      // If we have a view, use its document to get all notes
+      doc = view.state.doc;
+    }
   }
   
-  // For document nodes, serialize main content and append notes section
-  const mainContent = serializeNode(node, schema);
-  const notes = collectNotes(node.content, schema);
-  if (notes.length > 0) {
-    return mainContent + "\n\n" + notes.join("\n");
+  // Get notes from store (not from document)
+  let notesMap: Map<string, any> = new Map();
+  const unsubscribe = notesStore.subscribe((store) => {
+    notesMap = store;
+  });
+  
+  // Get note references - from fragment if it's a selection, otherwise from full doc
+  let refs: Array<{ node: ProseMirrorNode; pos: number; noteId: string; number: number }> = [];
+  if (fragmentToCheck) {
+    // For selected content, find notes within the fragment
+    try {
+      refs = findNoteReferencesInFragment(fragmentToCheck, schema);
+    } catch (error) {
+      console.error("Error finding note references in fragment:", error);
+      refs = [];
+    }
+  } else if (doc) {
+    // For full document, get all note references
+    refs = findNoteReferences(doc, schema);
   }
+  
+  if (refs.length > 0) {
+    const notes: string[] = [];
+    
+    // Get unique note IDs in order
+    const seen = new Set<string>();
+    for (const ref of refs) {
+      if (!seen.has(ref.noteId)) {
+        seen.add(ref.noteId);
+        const note = notesMap.get(ref.noteId);
+        if (note) {
+          notes.push(`[^${note.number}]: ${note.content}`);
+        }
+      }
+    }
+    
+    unsubscribe();
+    
+    if (notes.length > 0) {
+      return mainContent + "\n\n---\n\n" + notes.join("\n");
+    }
+  }
+  
+  unsubscribe();
   return mainContent;
 }
 
-/**
- * Collects all note content nodes and serializes them
- */
-function collectNotes(nodeOrFragment: ProseMirrorNode | Fragment, schema: Schema): string[] {
-  const notes: string[] = [];
-  const fragment = nodeOrFragment instanceof Fragment ? nodeOrFragment : nodeOrFragment.content;
-  
-  fragment.forEach((node) => {
-    if (node.type.name === "note_content") {
-      const noteNumber = node.attrs.number || 1;
-      const noteText = serializeFragment(node.content, schema).trim();
-      notes.push(`[^${noteNumber}]: ${noteText}`);
-    } else if (node.content) {
-      // Recursively search for notes in nested content
-      const nestedNotes = collectNotes(node.content, schema);
-      notes.push(...nestedNotes);
-    }
-  });
-  
-  // Sort notes by number
-  notes.sort((a, b) => {
-    const numA = parseInt(a.match(/\[\^(\d+)\]/)?.[1] || "0", 10);
-    const numB = parseInt(b.match(/\[\^(\d+)\]/)?.[1] || "0", 10);
-    return numA - numB;
-  });
-  
-  return notes;
-}
+// Note: collectNotes removed - notes are now stored in notesStore, not in document
 
 /**
  * Serializes a ProseMirror node to Markdown
@@ -106,11 +181,7 @@ function serializeNode(node: ProseMirrorNode, schema: Schema): string {
     case "table":
       return serializeTable(node, schema) + "\n\n";
     
-    case "note_content":
-      // Serialize note content as [^number]: content
-      const noteNumber = node.attrs.number || 1;
-      const noteText = serializeFragment(node.content, schema).trim();
-      return `[^${noteNumber}]: ${noteText}\n`;
+    // Note: note_content removed - notes are stored in notesStore
     
     default:
       // Fallback: serialize content
@@ -123,9 +194,36 @@ function serializeNode(node: ProseMirrorNode, schema: Schema): string {
  */
 function serializeFragment(fragment: Fragment, schema: Schema): string {
   let result = "";
+  
+  // Check if fragment contains only text nodes (partial selection)
+  let hasOnlyTextNodes = true;
+  let hasBlockNodes = false;
   fragment.forEach((node) => {
-    result += serializeNode(node, schema);
+    if (!node.isText) {
+      hasOnlyTextNodes = false;
+      if (node.isBlock) {
+        hasBlockNodes = true;
+      }
+    }
   });
+  
+  // If fragment has only text nodes (partial selection), wrap in paragraph structure
+  if (hasOnlyTextNodes && !hasBlockNodes) {
+    // Serialize as inline content (preserves formatting like bold, italic)
+    result = serializeInline(fragment, schema);
+  } else {
+    // Fragment contains block nodes, serialize normally
+    fragment.forEach((node) => {
+      if (node.isText) {
+        // Text node at top level - serialize as inline
+        result += serializeInline(Fragment.fromArray([node]), schema);
+      } else {
+        // Block node - serialize normally
+        result += serializeNode(node, schema);
+      }
+    });
+  }
+  
   return result;
 }
 

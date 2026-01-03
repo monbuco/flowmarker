@@ -16,7 +16,7 @@ import { EditorView } from "prosemirror-view";
 import { InputRule } from "prosemirror-inputrules";
 import { Schema, Fragment } from "prosemirror-model";
 import { dialogStore } from "./dialogStore";
-import { generateNoteId, insertOrUpdateNote, findNoteReferences, renumberNotes, getNoteContent } from "./notes";
+import { generateNoteId, insertOrUpdateNote, findNoteReferences, renumberNotes, getNoteContent, removeNote } from "./notes";
 
 export interface CommandHandler {
   name: string;
@@ -358,6 +358,10 @@ export async function insertNote(view: EditorView): Promise<boolean> {
       // Insert note content in notes section (async to avoid transaction conflicts)
       setTimeout(() => {
         insertOrUpdateNote(view, noteId, noteContent, nextNumber);
+        // Update note positions after insertion
+        import("./noteNavigation").then(({ updateNotePositions }) => {
+          updateNotePositions(view);
+        });
       }, 10);
       
       view.focus();
@@ -399,6 +403,16 @@ export async function editNote(view: EditorView, noteId: string): Promise<boolea
     return false;
   }
   
+  // Check if user wants to delete (empty content means delete)
+  if (newContent === "" || newContent.trim() === "") {
+    // Ask for confirmation
+    if (confirm("Delete this note? This will remove the note reference and its content.")) {
+      return deleteNote(view, noteId);
+    } else {
+      return false;
+    }
+  }
+  
   // Find the note reference to get its number
   const refs = findNoteReferences(state.doc, schema);
   const ref = refs.find(r => r.noteId === noteId);
@@ -408,5 +422,12 @@ export async function editNote(view: EditorView, noteId: string): Promise<boolea
   insertOrUpdateNote(view, noteId, newContent, number);
   
   return true;
+}
+
+/**
+ * Delete a note by noteId
+ */
+export function deleteNote(view: EditorView, noteId: string): boolean {
+  return removeNote(view, noteId);
 }
 

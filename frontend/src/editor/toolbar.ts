@@ -14,6 +14,9 @@ import {
 } from "prosemirror-tables";
 import { schema } from "./schema";
 import { dialogStore } from "./dialogStore";
+import { insertNote } from "./commands";
+import { scrollToNote } from "./noteNavigation";
+import { findNoteReferences } from "./notes";
 
 // Text formatting commands
 export function toggleBold(view: EditorView) {
@@ -535,6 +538,12 @@ export async function copyAsMarkdown(view: EditorView): Promise<boolean> {
       // Has selection - copy selected content
       const slice = state.doc.slice(from, to);
       content = slice.content;
+      
+      // Debug: Check if fragment has content
+      if (content instanceof Fragment && content.size === 0) {
+        console.warn("Copy MD: Fragment is empty");
+        return false;
+      }
     } else {
       // No selection - copy the current block (paragraph, heading, etc.)
       // Find the innermost block node (not doc, not text)
@@ -579,7 +588,7 @@ export async function copyAsMarkdown(view: EditorView): Promise<boolean> {
     
     // Import serializer dynamically
     const { serializeToMarkdown } = await import("./clipboard/markdownSerializer");
-    const markdown = serializeToMarkdown(content, schema);
+    const markdown = serializeToMarkdown(content, schema, view);
     
     if (!markdown || markdown.trim() === "") {
       return false;
@@ -590,6 +599,76 @@ export async function copyAsMarkdown(view: EditorView): Promise<boolean> {
     return true;
   } catch (error) {
     console.error("Error copying as Markdown:", error);
+    return false;
+  }
+}
+
+// Insert a new note
+export async function insertNoteCommand(view: EditorView): Promise<boolean> {
+  try {
+    return await insertNote(view);
+  } catch (error) {
+    console.error("Error inserting note:", error);
+    return false;
+  }
+}
+
+// View notes - scroll to notes section
+export function viewNotes(view: EditorView): boolean {
+  try {
+    console.log("viewNotes: Starting...", view);
+    
+    if (!view) {
+      console.warn("viewNotes: view is null");
+      return false;
+    }
+    
+    // Check if notes exist in the document
+    const { doc } = view.state;
+    const refs = findNoteReferences(doc, schema);
+    console.log("viewNotes: Found", refs.length, "note references");
+    
+    // Use requestAnimationFrame to ensure DOM is ready
+    requestAnimationFrame(() => {
+      const notesSection = document.querySelector('.notes-section');
+      console.log("viewNotes: Notes section found:", notesSection);
+      
+      if (notesSection) {
+        console.log("viewNotes: Scrolling to notes section...");
+        notesSection.scrollIntoView({ behavior: "smooth", block: "center" });
+        // Highlight briefly
+        notesSection.classList.add("note-highlight");
+        setTimeout(() => {
+          notesSection.classList.remove("note-highlight");
+        }, 2000);
+        return;
+      }
+      
+      // If notes section not found but we have notes, try scrolling to first note
+      if (refs.length > 0) {
+        const firstNoteId = refs[0].noteId;
+        console.log("viewNotes: Notes section not in DOM, scrolling to first note:", firstNoteId);
+        scrollToNote(firstNoteId, view);
+        return;
+      }
+      
+      // No notes at all - scroll to bottom of editor
+      console.log("viewNotes: No notes found, scrolling to bottom of editor");
+      const editorContainer = view.dom.closest('.editor-container');
+      const editorWrapper = view.dom.closest('.editor');
+      if (editorWrapper) {
+        editorWrapper.scrollIntoView({ behavior: "smooth", block: "end" });
+      } else if (editorContainer) {
+        editorContainer.scrollIntoView({ behavior: "smooth", block: "end" });
+      } else {
+        // Fallback: scroll window to bottom
+        window.scrollTo({ behavior: "smooth", top: document.body.scrollHeight });
+      }
+    });
+    
+    return true;
+  } catch (error) {
+    console.error("Error viewing notes:", error);
     return false;
   }
 }

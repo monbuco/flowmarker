@@ -3,6 +3,7 @@ import { Slice } from "prosemirror-model";
 import MarkdownIt from "markdown-it";
 // @ts-ignore - markdown-it-table may not have types
 import { markdownItTable } from "markdown-it-table";
+import { setNote, generateNoteId } from "../notesStore";
 
 /**
  * Markdown → ProseMirror converter using markdown-it.
@@ -81,9 +82,18 @@ export function parseMarkdown(text: string, schema: Schema): Slice | null {
 function tokensToNodes(tokens: any[], schema: Schema): ProseMirrorNode[] {
   const nodes: ProseMirrorNode[] = [];
   let i = 0;
+  
+  // Map footnote numbers to noteIds for linking references with definitions
+  const footnoteNumberToNoteId = new Map<number, string>();
 
   while (i < tokens.length) {
     const token = tokens[i];
+    
+    // Skip horizontal rules (they're used before footnotes in Markdown)
+    if (token.type === "hr") {
+      i++;
+      continue;
+    }
     
     // Check for footnote definition: [^number]: content
     // This appears as a paragraph with specific text pattern
@@ -108,17 +118,19 @@ function tokensToNodes(tokens: any[], schema: Schema): ProseMirrorNode[] {
         j++;
       }
       
-      if (foundFootnoteDef && schema.nodes.note_content) {
-        // Create note content node
-        const noteId = `note-${footnoteNumber}`;
-        const paragraph = schema.nodes.paragraph.create({}, schema.text(footnoteContent));
-        const noteContent = schema.nodes.note_content.create(
-          { noteId, number: footnoteNumber },
-          Fragment.fromArray([paragraph])
-        );
-        nodes.push(noteContent);
+      if (foundFootnoteDef) {
+        // Store note in notesStore instead of creating note_content node
+        const noteId = generateNoteId();
+        setNote({
+          noteId,
+          content: footnoteContent,
+          number: footnoteNumber,
+        });
         
-        // Skip to paragraph_close
+        // Map footnote number to noteId for linking with references
+        footnoteNumberToNoteId.set(footnoteNumber, noteId);
+        
+        // Skip to paragraph_close (don't add to document)
         while (i < tokens.length && tokens[i].type !== "paragraph_close") {
           i++;
         }
@@ -147,7 +159,7 @@ function tokensToNodes(tokens: any[], schema: Schema): ProseMirrorNode[] {
         if (schema.nodes.heading) {
           const level = parseInt(token.tag.substring(1), 10); // h1 -> 1, h2 -> 2, etc.
           // Find the closing tag and get content
-          const content = getInlineContent(tokens, i + 1, "heading_close", schema);
+          const content = getInlineContent(tokens, i + 1, "heading_close", schema, footnoteNumberToNoteId);
           nodes.push(
             schema.nodes.heading.create(
               { level: Math.min(Math.max(level, 1), 6) },
@@ -178,7 +190,7 @@ function tokensToNodes(tokens: any[], schema: Schema): ProseMirrorNode[] {
           }
         } else {
           // Regular paragraph with text/content
-          const content = getInlineContent(tokens, i + 1, "paragraph_close", schema);
+          const content = getInlineContent(tokens, i + 1, "paragraph_close", schema, footnoteNumberToNoteId);
           nodes.push(schema.nodes.paragraph.create({}, content));
         }
         i = findClosingToken(tokens, i, "paragraph_close") + 1;
@@ -216,7 +228,7 @@ function tokensToNodes(tokens: any[], schema: Schema): ProseMirrorNode[] {
       case "blockquote_open": {
         // Blockquote
         if (schema.nodes.blockquote) {
-          const content = parseBlockContent(tokens, i + 1, "blockquote_close", schema);
+          const content = parseBlockContent(tokens, i + 1, "blockquote_close", schema, footnoteNumberToNoteId);
           if (content.size > 0) {
             nodes.push(schema.nodes.blockquote.create({}, content));
           }
@@ -262,7 +274,7 @@ function tokensToNodes(tokens: any[], schema: Schema): ProseMirrorNode[] {
       case "table_open": {
         // Table: parse table structure
         if (schema.nodes.table) {
-          const tableRows = parseTable(tokens, i, schema);
+          const tableRows = parseTable(tokens, i, schema, footnoteNumberToNoteId);
           if (tableRows.length > 0) {
             nodes.push(schema.nodes.table.create({}, tableRows));
           }
@@ -318,7 +330,7 @@ function getInlineTokensBetween(tokens: any[], start: number, closeType: string)
  * @param schema - The ProseMirror schema
  * @returns Array of table_row nodes
  */
-function parseTable(tokens: any[], start: number, schema: Schema): ProseMirrorNode[] {
+function parseTable(tokens: any[], start: number, schema: Schema, footnoteNumberToNoteId?: Map<number, string>): ProseMirrorNode[] {
   const rows: ProseMirrorNode[] = [];
   let i = start + 1; // Skip table_open
   
@@ -340,7 +352,7 @@ function parseTable(tokens: any[], start: number, schema: Schema): ProseMirrorNo
           
           // Get inline content from the cell
           // Table cells in markdown-it-table typically contain inline tokens
-          const inlineContent = getInlineContent(tokens, j + 1, closeType, schema);
+          const inlineContent = getInlineContent(tokens, j + 1, closeType, schema, footnoteNumberToNoteId);
           
           // Table cells must contain block nodes, so wrap inline content in a paragraph
           const paragraph = schema.nodes.paragraph.create({}, inlineContent);
@@ -381,7 +393,8 @@ function getInlineContent(
   tokens: any[],
   start: number,
   closeType: string,
-  schema: Schema
+  schema: Schema,
+  footnoteNumberToNoteId?: Map<number, string>
 ): Fragment {
   const nodes: ProseMirrorNode[] = [];
   let i = start;
@@ -392,7 +405,7 @@ function getInlineContent(
     
     if (token.type === "inline") {
       // Parse inline tokens
-      const inlineNodes = parseInlineTokens(token.children || [], schema);
+      const inlineNodes = parseInlineTokens(token.children || [], schema, footnoteNumberToNoteId);
       nodes.push(...inlineNodes);
     } else if (token.type === "text") {
       text += token.content;
@@ -416,7 +429,7 @@ function getInlineContent(
  * @param schema - The ProseMirror schema
  * @returns Array of ProseMirror text nodes with marks
  */
-function parseInlineTokens(tokens: any[], schema: Schema): ProseMirrorNode[] {
+function parseInlineTokens(tokens: any[], schema: Schema, footnoteNumberToNoteId?: Map<number, string>): ProseMirrorNode[] {
   const nodes: ProseMirrorNode[] = [];
   let currentText = "";
   const marks: any[] = [];
@@ -448,7 +461,19 @@ function parseInlineTokens(tokens: any[], schema: Schema): ProseMirrorNode[] {
             
             // Create note reference node
             const noteNumber = parseInt(match[1], 10);
-            const noteId = `note-${noteNumber}`; // Generate ID based on number
+            // Use mapped noteId if available, otherwise generate one
+            let noteId: string;
+            if (footnoteNumberToNoteId && footnoteNumberToNoteId.has(noteNumber)) {
+              noteId = footnoteNumberToNoteId.get(noteNumber)!;
+            } else {
+              // If no definition found yet, generate ID and create empty note
+              noteId = generateNoteId();
+              setNote({
+                noteId,
+                content: "",
+                number: noteNumber,
+              });
+            }
             const noteRef = schema.nodes.note_ref.create({ noteId, number: noteNumber });
             nodes.push(noteRef);
             
@@ -549,50 +574,7 @@ function parseInlineTokens(tokens: any[], schema: Schema): ProseMirrorNode[] {
         }
         break;
 
-      case "text":
-        // Check for footnote reference syntax [^number] in text
-        if (schema.nodes.note_ref) {
-          const text = token.content;
-          const footnoteRefRegex = /\[\^(\d+)\]/g;
-          let lastIndex = 0;
-          let match;
-          
-          while ((match = footnoteRefRegex.exec(text)) !== null) {
-            // Add text before the footnote reference
-            if (match.index > lastIndex) {
-              const beforeText = text.substring(lastIndex, match.index);
-              if (beforeText) {
-                currentText += beforeText;
-              }
-            }
-            
-            // Flush current text if any
-            if (currentText) {
-              nodes.push(schema.text(currentText, marks.slice()));
-              currentText = "";
-            }
-            
-            // Create note reference node
-            const noteNumber = parseInt(match[1], 10);
-            const noteId = `note-${noteNumber}`; // Generate ID based on number
-            const noteRef = schema.nodes.note_ref.create({ noteId, number: noteNumber });
-            nodes.push(noteRef);
-            
-            lastIndex = match.index + match[0].length;
-          }
-          
-          // Add remaining text after last footnote reference
-          if (lastIndex < text.length) {
-            currentText += text.substring(lastIndex);
-          } else if (lastIndex === 0) {
-            // No footnote references found, add entire text
-            currentText += text;
-          }
-        } else {
-          // No note_ref node type, just add text
-          currentText += token.content;
-        }
-        break;
+      // Note: duplicate "text" case removed - handled above
 
       case "image": {
         // Image: ![alt](src)
@@ -680,7 +662,8 @@ function parseBlockContent(
   tokens: any[],
   start: number,
   closeType: string,
-  schema: Schema
+  schema: Schema,
+  footnoteNumberToNoteId?: Map<number, string>
 ): Fragment {
   const nodes: ProseMirrorNode[] = [];
   let i = start;
@@ -689,12 +672,12 @@ function parseBlockContent(
     const token = tokens[i];
 
     if (token.type === "paragraph_open") {
-      const content = getInlineContent(tokens, i + 1, "paragraph_close", schema);
+      const content = getInlineContent(tokens, i + 1, "paragraph_close", schema, footnoteNumberToNoteId);
       nodes.push(schema.nodes.paragraph.create({}, content));
       i = findClosingToken(tokens, i, "paragraph_close") + 1;
     } else if (token.type === "heading_open") {
       const level = parseInt(token.tag.substring(1), 10);
-      const content = getInlineContent(tokens, i + 1, "heading_close", schema);
+      const content = getInlineContent(tokens, i + 1, "heading_close", schema, footnoteNumberToNoteId);
       if (schema.nodes.heading) {
         nodes.push(
           schema.nodes.heading.create(

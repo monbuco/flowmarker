@@ -74,47 +74,13 @@ const noteRefSpec = {
   },
 };
 
-// Note content (block node) - stores the actual note content
-const noteContentSpec = {
-  content: "block+",
-  group: "block",
-  defining: true,
-  attrs: {
-    noteId: { default: null },
-    number: { default: 1 },
-  },
-  parseDOM: [
-    {
-      tag: "div[data-note-content]",
-      getAttrs: (node: any) => {
-        return {
-          noteId: node.getAttribute("data-note-id") || null,
-          number: parseInt(node.getAttribute("data-note-number") || "1", 10),
-        };
-      },
-    },
-  ],
-  toDOM: (node: any) => {
-    return [
-      "div",
-      {
-        "data-note-content": "true",
-        "data-note-id": node.attrs.noteId,
-        "data-note-number": node.attrs.number.toString(),
-        class: "note-content",
-      },
-      ["span", { class: "note-number" }, `${node.attrs.number}. `],
-      ["span", { class: "note-text" }, 0],
-    ];
-  },
-};
+// Note: note_content is removed - notes are stored as metadata and rendered outside ProseMirror
 
 // Combine all nodes
 const allNodes = addListNodes(
   basicSchema.spec.nodes
     .append(tableNodesSpec)
-    .addToEnd("code_block", codeBlockSpec)
-    .addToEnd("note_content", noteContentSpec),
+    .addToEnd("code_block", codeBlockSpec),
   "paragraph block*",
   "block"
 );

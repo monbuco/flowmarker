@@ -1,10 +1,10 @@
 <script lang="ts">
   import { EditorView } from "prosemirror-view";
   import { EditorState } from "prosemirror-state";
-  import { Pencil } from "lucide-svelte";
+  import { Pencil, Trash2 } from "lucide-svelte";
   import { schema } from "./schema";
   import { getNoteContent } from "./notes";
-  import { editNote } from "./commands";
+  import { editNote, deleteNote } from "./commands";
 
   let { view }: { view: EditorView | null } = $props();
   
@@ -19,7 +19,6 @@
 
   function updateNoteInfo(targetNoteId: string | null, targetElement: HTMLElement | null) {
     if (!view || !targetNoteId) {
-      console.log('[NotePopover] updateNoteInfo: missing view or noteId');
       isVisible = false;
       noteId = null;
       return;
@@ -28,7 +27,6 @@
     // Get fresh state
     const currentState = view.state;
     const content = getNoteContent(currentState.doc, currentState.schema, targetNoteId);
-    console.log('[NotePopover] updateNoteInfo: noteId=', targetNoteId, 'content=', content);
     
     // Show popover even if content is empty (content can be null or empty string)
     noteId = targetNoteId;
@@ -43,7 +41,6 @@
       }
     });
     noteNumber = foundNumber;
-    console.log('[NotePopover] updateNoteInfo: noteNumber=', foundNumber);
 
     // Get position of the note reference element relative to editor container
     if (targetElement) {
@@ -57,7 +54,6 @@
           top: elementRect.bottom - containerRect.top + 5,
           left: elementRect.left - containerRect.left,
         };
-        console.log('[NotePopover] updateNoteInfo: position=', position);
         isVisible = true;
       } else {
         // Fallback: use view.dom
@@ -68,11 +64,8 @@
           top: elementRect.bottom - viewRect.top + 5,
           left: elementRect.left - viewRect.left,
         };
-        console.log('[NotePopover] updateNoteInfo: position (fallback)=', position);
         isVisible = true;
       }
-    } else {
-      console.log('[NotePopover] updateNoteInfo: no targetElement');
     }
   }
 
@@ -89,6 +82,17 @@
         }
       }
     })();
+  }
+
+  function handleDelete() {
+    if (!view || !noteId) return;
+    
+    if (confirm("Delete this note? This will remove the note reference and its content.")) {
+      deleteNote(view, noteId);
+      // Hide popover after deletion
+      isVisible = false;
+      noteId = null;
+    }
   }
 
   // Update state when view changes
@@ -113,7 +117,6 @@
         const targetNoteId = noteRefElement.getAttribute('data-note-id');
         if (targetNoteId && targetNoteId !== currentHoveredNoteId) {
           currentHoveredNoteId = targetNoteId;
-          console.log('[NotePopover] Hovering over note ref:', targetNoteId);
           
           // Clear any existing timeout
           if (hoverTimeout !== null) {
@@ -122,7 +125,6 @@
           
           // Small delay to prevent flickering
           hoverTimeout = window.setTimeout(() => {
-            console.log('[NotePopover] Showing popover for note:', targetNoteId);
             updateNoteInfo(targetNoteId, noteRefElement);
           }, 100);
         }
@@ -217,9 +219,14 @@
         <span class="note-number">{noteNumber}.</span>
         <span class="note-text">{noteContent || "(empty note)"}</span>
       </div>
-      <button class="note-edit-btn" onclick={handleEdit} title="Edit note">
-        <Pencil size={14} />
-      </button>
+      <div class="note-actions">
+        <button class="note-edit-btn" onclick={handleEdit} title="Edit note">
+          <Pencil size={14} />
+        </button>
+        <button class="note-delete-btn" onclick={handleDelete} title="Delete note">
+          <Trash2 size={14} />
+        </button>
+      </div>
     </div>
   </div>
 {/if}
@@ -265,7 +272,14 @@
     word-wrap: break-word;
   }
 
-  .note-edit-btn {
+  .note-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .note-edit-btn,
+  .note-delete-btn {
     background: transparent;
     border: none;
     cursor: pointer;
@@ -277,16 +291,21 @@
     align-items: center;
     justify-content: center;
     color: currentColor;
-    flex-shrink: 0;
   }
 
-  .note-edit-btn :global(svg) {
+  .note-edit-btn :global(svg),
+  .note-delete-btn :global(svg) {
     stroke: currentColor;
     fill: none;
   }
 
   .note-edit-btn:hover {
     background-color: rgba(0, 0, 0, 0.05);
+  }
+
+  .note-delete-btn:hover {
+    background-color: rgba(220, 38, 38, 0.1);
+    color: #dc2626;
   }
 
   @media (prefers-color-scheme: dark) {

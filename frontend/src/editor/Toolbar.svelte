@@ -19,6 +19,8 @@
     Table,
     FileDown,
     FileUp,
+    StickyNote,
+    ChevronDown,
   } from "lucide-svelte";
   import {
     toggleBold,
@@ -42,6 +44,8 @@
     isBlockActive,
     isListActive,
     getLinkUrl,
+    insertNoteCommand,
+    viewNotes,
   } from "./toolbar";
   import { schema } from "./schema";
 
@@ -49,6 +53,7 @@
 
   let editorState: EditorState | null = $state(null);
   let updateKey = $state(0);
+  let notesDropdownOpen = $state(false);
 
   function forceUpdate() {
     updateKey++;
@@ -286,6 +291,52 @@
           <Table size={16} />
         </button>
       {/if}
+      {#if schema.nodes.note_ref}
+        <div class="toolbar-dropdown">
+          <button
+            class="toolbar-button"
+            class:active={notesDropdownOpen}
+            onclick={() => {
+              notesDropdownOpen = !notesDropdownOpen;
+            }}
+            onblur={() => {
+              // Close dropdown when focus is lost
+              setTimeout(() => {
+                notesDropdownOpen = false;
+              }, 200);
+            }}
+            title="Notes"
+          >
+            <StickyNote size={16} />
+            <ChevronDown size={12} class="dropdown-chevron" />
+          </button>
+          {#if notesDropdownOpen}
+            <div class="dropdown-menu">
+              <button
+                class="dropdown-item"
+                onclick={() => {
+                  handleCommand(insertNoteCommand);
+                  notesDropdownOpen = false;
+                }}
+              >
+                <StickyNote size={14} />
+                <span>Insert Note</span>
+              </button>
+              <button
+                class="dropdown-item"
+                onclick={async () => {
+                  if (view) {
+                    viewNotes(view);
+                  }
+                  notesDropdownOpen = false;
+                }}
+              >
+                <span>View Notes</span>
+              </button>
+            </div>
+          {/if}
+        </div>
+      {/if}
     </div>
 
     <div class="toolbar-divider"></div>
@@ -421,6 +472,73 @@
     }
 
     .toolbar-divider {
+      background-color: rgba(255, 255, 255, 0.1);
+    }
+  }
+  
+  .toolbar-dropdown {
+    position: relative;
+    display: inline-block;
+  }
+  
+  .dropdown-chevron {
+    margin-left: 2px;
+    opacity: 0.6;
+  }
+  
+  .dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    background-color: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 1001;
+    min-width: 160px;
+    padding: 4px;
+  }
+  
+  .dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 12px;
+    border: none;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    color: #333;
+    font-size: 14px;
+    border-radius: 2px;
+    transition: background-color 0.1s;
+  }
+  
+  .dropdown-item:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+  }
+  
+  .dropdown-item:active {
+    background-color: rgba(0, 0, 0, 0.1);
+  }
+  
+  @media (prefers-color-scheme: dark) {
+    .dropdown-menu {
+      background-color: #2a2a2a;
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+    
+    .dropdown-item {
+      color: #e0e0e0;
+    }
+    
+    .dropdown-item:hover {
+      background-color: rgba(255, 255, 255, 0.05);
+    }
+    
+    .dropdown-item:active {
       background-color: rgba(255, 255, 255, 0.1);
     }
   }
