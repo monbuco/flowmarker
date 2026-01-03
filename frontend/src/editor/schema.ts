@@ -40,14 +40,89 @@ const codeBlockSpec = basicSchema.spec.nodes.get("code_block") || {
   },
 };
 
+// Note reference (inline node) - superscript reference to a note
+const noteRefSpec = {
+  inline: true,
+  group: "inline",
+  atom: true,
+  attrs: {
+    noteId: { default: null },
+    number: { default: 1 },
+  },
+  parseDOM: [
+    {
+      tag: "sup[data-note-ref]",
+      getAttrs: (node: any) => {
+        return {
+          noteId: node.getAttribute("data-note-id") || null,
+          number: parseInt(node.getAttribute("data-note-number") || "1", 10),
+        };
+      },
+    },
+  ],
+  toDOM: (node: any) => {
+    return [
+      "sup",
+      {
+        "data-note-ref": "true",
+        "data-note-id": node.attrs.noteId,
+        "data-note-number": node.attrs.number.toString(),
+        class: "note-ref",
+      },
+      node.attrs.number.toString(),
+    ];
+  },
+};
+
+// Note content (block node) - stores the actual note content
+const noteContentSpec = {
+  content: "block+",
+  group: "block",
+  defining: true,
+  attrs: {
+    noteId: { default: null },
+    number: { default: 1 },
+  },
+  parseDOM: [
+    {
+      tag: "div[data-note-content]",
+      getAttrs: (node: any) => {
+        return {
+          noteId: node.getAttribute("data-note-id") || null,
+          number: parseInt(node.getAttribute("data-note-number") || "1", 10),
+        };
+      },
+    },
+  ],
+  toDOM: (node: any) => {
+    return [
+      "div",
+      {
+        "data-note-content": "true",
+        "data-note-id": node.attrs.noteId,
+        "data-note-number": node.attrs.number.toString(),
+        class: "note-content",
+      },
+      ["span", { class: "note-number" }, `${node.attrs.number}. `],
+      ["span", { class: "note-text" }, 0],
+    ];
+  },
+};
+
 // Combine all nodes
 const allNodes = addListNodes(
-  basicSchema.spec.nodes.append(tableNodesSpec).addToEnd("code_block", codeBlockSpec),
+  basicSchema.spec.nodes
+    .append(tableNodesSpec)
+    .addToEnd("code_block", codeBlockSpec)
+    .addToEnd("note_content", noteContentSpec),
   "paragraph block*",
   "block"
 );
 
+// Add inline nodes (note_ref)
+const allNodesWithInline = allNodes.addToEnd("note_ref", noteRefSpec);
+
 export const schema = new Schema({
-  nodes: allNodes,
+  nodes: allNodesWithInline,
   marks: basicSchema.spec.marks,
 });

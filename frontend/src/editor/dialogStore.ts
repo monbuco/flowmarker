@@ -5,9 +5,10 @@ export interface DialogConfig {
   placeholder: string;
   defaultValue: string;
   label?: string;
-  type?: "text" | "number";
+  type?: "text" | "number" | "textarea";
   min?: number;
   max?: number;
+  multiline?: boolean; // For textarea support
 }
 
 export interface DialogState {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { X, Link, Table, Image, Code, Quote, FileText } from "lucide-svelte";
+  import { X, Link, Table, Image, Code, Quote, FileText, StickyNote } from "lucide-svelte";
   import { dialogStore, type DialogState } from "./dialogStore";
 
   let dialogState: DialogState = $state({ visible: false, config: null, resolve: null });
@@ -12,6 +12,7 @@
     if (titleLower === "image") return Image;
     if (titleLower === "code") return Code;
     if (titleLower === "quote") return Quote;
+    if (titleLower === "note" || titleLower === "notes") return StickyNote;
     return FileText; // Default icon
   }
 
@@ -41,9 +42,11 @@
   let inputValue = $state("");
 
   function handleSave() {
-    if (inputValue.trim() !== "") {
-      dialogStore.hide(inputValue.trim());
-    }
+    // Allow empty values for notes (user might want to delete content)
+    const value = dialogState.config?.type === "textarea" || dialogState.config?.multiline 
+      ? inputValue.trim() 
+      : inputValue.trim();
+    dialogStore.hide(value || "");
   }
 
   function handleCancel() {
@@ -53,10 +56,11 @@
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === "Escape") {
       handleCancel();
-    } else if (event.key === "Enter" && !event.shiftKey) {
+    } else if (event.key === "Enter" && !event.shiftKey && dialogState.config?.type !== "textarea" && !dialogState.config?.multiline) {
       event.preventDefault();
       handleSave();
     }
+    // For textarea, Shift+Enter creates new line, Enter alone saves
   }
 </script>
 
@@ -90,6 +94,8 @@
               <Code size={16} class="dialog-title-icon" />
             {:else if iconName === "quote"}
               <Quote size={16} class="dialog-title-icon" />
+            {:else if iconName === "note" || iconName === "notes"}
+              <StickyNote size={16} class="dialog-title-icon" />
             {:else}
               <FileText size={16} class="dialog-title-icon" />
             {/if}
@@ -104,16 +110,27 @@
         {#if dialogState.config.label}
           <label class="dialog-label" for="dialog-input">{dialogState.config.label}</label>
         {/if}
-        <input
-          id="dialog-input"
-          type={dialogState.config.type || "text"}
-          bind:value={inputValue}
-          placeholder={dialogState.config.placeholder}
-          class="dialog-input"
-          onkeydown={handleKeydown}
-          min={dialogState.config.min}
-          max={dialogState.config.max}
-        />
+        {#if dialogState.config.type === "textarea" || dialogState.config.multiline}
+          <textarea
+            id="dialog-input"
+            bind:value={inputValue}
+            placeholder={dialogState.config.placeholder}
+            class="dialog-input dialog-textarea"
+            onkeydown={handleKeydown}
+            rows="4"
+          ></textarea>
+        {:else}
+          <input
+            id="dialog-input"
+            type={dialogState.config.type || "text"}
+            bind:value={inputValue}
+            placeholder={dialogState.config.placeholder}
+            class="dialog-input"
+            onkeydown={handleKeydown}
+            min={dialogState.config.min}
+            max={dialogState.config.max}
+          />
+        {/if}
       </div>
       <div class="dialog-actions">
         <button class="dialog-save-btn" onclick={handleSave} title="Save (Enter)">
@@ -231,6 +248,12 @@
     outline: none;
     border-color: #333;
     box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+  }
+
+  .dialog-textarea {
+    resize: vertical;
+    min-height: 80px;
+    font-family: inherit;
   }
 
   .dialog-actions {

@@ -12,6 +12,7 @@
   
     import { schema } from "./schema";
     import { buildInputRules } from "./inputRules";
+    import { notePlugin } from "./notePlugin";
     import Toolbar from "./Toolbar.svelte";
     import LinkEditor from "./LinkEditor.svelte";
     import TableMenu from "./TableMenu.svelte";
@@ -169,7 +170,8 @@
             // Check if current line is "---" and convert to horizontal rule
             let lineStart = $from.start($from.depth);
             let lineEnd = $from.end($from.depth);
-            let lineText = state.doc.textBetween(lineStart, lineEnd).trim();
+            let lineText = state.doc.textBetween(lineStart, lineEnd);
+            let lineTextTrimmed = lineText.trim();
             
             // Check for fenced code block: ```language
             const codeBlockMatch = lineText.match(/^```(\w*)$/);
@@ -211,7 +213,7 @@
               }
             }
             
-            if (lineText === "---" && schema.nodes.horizontal_rule) {
+            if (lineTextTrimmed === "---" && schema.nodes.horizontal_rule) {
               // Find the paragraph node that contains "---"
               const paragraphNode = $from.node($from.depth);
               if (paragraphNode.type === schema.nodes.paragraph) {
@@ -243,20 +245,140 @@
             if (!view) return false;
             
             // Check for @table command
-            if (lineText === "@table" && schema.nodes.table) {
+            if (lineTextTrimmed === "@table" && schema.nodes.table) {
               // Handle async command - schedule it
-              (async () => {
-                const { processCommand } = await import("./commands");
-                await processCommand(view, "table");
-              })();
+              setTimeout(async () => {
+                if (view) {
+                  const { processCommand } = await import("./commands");
+                  await processCommand(view, "table");
+                }
+              }, 0);
               // Return true to prevent default Enter behavior
               return true;
+            }
+            
+            // Check for @note command - can be anywhere in the line
+            if (schema.nodes.note_ref && view) {
+              // Check if lineText contains @note (can be inline or standalone)
+              if (lineText.includes("@note")) {
+                // Use regex to find @note with word boundary to avoid matching partial words
+                const noteCommandPattern = /@note\b/;
+                const noteCommandMatch = lineText.match(noteCommandPattern);
+                if (noteCommandMatch && noteCommandMatch.index !== undefined) {
+                  console.log("[@note] Command detected, processing...");
+                  // Delete @note text immediately - find exact position
+                  // Use start/end of the current depth (paragraph content)
+                  const paragraphStart = $from.start($from.depth);
+                  const paragraphEnd = $from.end($from.depth);
+                  const fullParagraphText = state.doc.textBetween(paragraphStart, paragraphEnd);
+                  console.log("[@note] Full paragraph text:", JSON.stringify(fullParagraphText), "paragraphStart:", paragraphStart, "paragraphEnd:", paragraphEnd);
+                  // Find the exact match position - search for "@note" starting from the match index
+                  const matchIndex = fullParagraphText.indexOf("@note", noteCommandMatch.index);
+                  if (matchIndex >= 0) {
+                    const matchStart = paragraphStart + matchIndex;
+                    const matchEnd = matchStart + 5; // "@note" is exactly 5 characters
+                    // Verify we're deleting the right text - use the same method as fullParagraphText
+                    const textToDelete = state.doc.textBetween(matchStart, matchEnd);
+                    console.log("[@note] Text to delete:", JSON.stringify(textToDelete), "matchStart:", matchStart, "matchEnd:", matchEnd, "length:", textToDelete.length);
+                    // Check if it's exactly @note
+                    if (textToDelete === "@note") {
+                      // Delete @note and position cursor at deletion point
+                      const tr = state.tr.delete(matchStart, matchEnd);
+                      // Position cursor at the deletion point
+                      tr.setSelection(TextSelection.near(tr.doc.resolve(matchStart)));
+                      if (dispatch) {
+                        dispatch(tr);
+                        console.log("[@note] Transaction dispatched");
+                      }
+                      // Handle async command - use requestAnimationFrame + setTimeout to ensure DOM is updated
+                      console.log("[@note] Scheduling insertNote...");
+                      requestAnimationFrame(() => {
+                        setTimeout(() => {
+                          console.log("[@note] setTimeout callback executing, view exists:", !!view);
+                          if (view) {
+                            (async () => {
+                              try {
+                                console.log("[@note] Importing insertNote...");
+                                const { insertNote } = await import("./commands");
+                                console.log("[@note] Calling insertNote...");
+                                const result = await insertNote(view);
+                                console.log("[@note] insertNote completed, result:", result);
+                              } catch (error) {
+                                console.error("[@note] Error in insertNote:", error);
+                                console.error("[@note] Error stack:", error instanceof Error ? error.stack : "No stack");
+                              }
+                            })();
+                          } else {
+                            console.error("[@note] View is null!");
+                          }
+                        }, 50);
+                      });
+                      // Return true to prevent default Enter behavior
+                      return true;
+                    } else {
+                      console.log("[@note] Text mismatch, expected '@note', got:", JSON.stringify(textToDelete));
+                    }
+                  } else {
+                    console.log("[@note] Could not find @note in paragraph text");
+                  }
+                  // Return true to prevent default Enter behavior even if deletion failed
+                  return true;
+                }
+              }
+              
+              // Check for footnote syntax: [^] or [^1] anywhere in the line
+              const footnotePattern = /\[\^([^\]]*)\]/;
+              const footnoteMatch = lineText.match(footnotePattern);
+              if (footnoteMatch && footnoteMatch.index !== undefined) {
+                const paragraphNode = $from.node($from.depth);
+                if (paragraphNode.type === schema.nodes.paragraph) {
+                  const paragraphStart = $from.start($from.depth);
+                  const paragraphEnd = $from.end($from.depth);
+                  const fullParagraphText = state.doc.textBetween(paragraphStart, paragraphEnd);
+                  // Find the exact match position
+                  const matchIndex = fullParagraphText.indexOf(footnoteMatch[0], footnoteMatch.index);
+                  if (matchIndex >= 0) {
+                    const matchStart = paragraphStart + matchIndex;
+                    const matchEnd = matchStart + footnoteMatch[0].length;
+                    // Verify we're deleting the right text (should be [^...])
+                    const textToDelete = state.doc.textBetween(matchStart, matchEnd);
+                    if (textToDelete === footnoteMatch[0]) {
+                      // Delete the [^...] text immediately (including brackets)
+                      const tr = state.tr.delete(matchStart, matchEnd);
+                      // Position cursor at the deletion point
+                      tr.setSelection(TextSelection.near(tr.doc.resolve(matchStart)));
+                      if (dispatch) {
+                        dispatch(tr);
+                      }
+                      // Handle async command - use setTimeout to ensure it runs after dispatch
+                      setTimeout(() => {
+                        if (view) {
+                          (async () => {
+                            try {
+                              console.log("Calling insertNote from footnote...");
+                              const { insertNote } = await import("./commands");
+                              const result = await insertNote(view);
+                              console.log("insertNote result:", result);
+                            } catch (error) {
+                              console.error("Error inserting note:", error);
+                            }
+                          })();
+                        }
+                      }, 100);
+                      // Return true to prevent default Enter behavior
+                      return true;
+                    }
+                  }
+                  // Return true to prevent default Enter behavior
+                  return true;
+                }
+              }
             }
             
             // Check for header row shortcut: | header | header | + Enter
             // This opens the table dialog with column count pre-filled
             const tableHeaderPattern = /^\|.+\|/;
-            if (tableHeaderPattern.test(lineText) && schema.nodes.table) {
+            if (tableHeaderPattern.test(lineTextTrimmed) && schema.nodes.table) {
               // Count columns from the header row
               const cells = lineText.split('|').map(c => c.trim()).filter(c => c);
               if (cells.length >= 2) {
@@ -358,6 +480,7 @@
             keymap(customKeymap),
             keymap(baseKeymap),
             history(),
+            notePlugin(),
             columnResizing(),
             tableEditing(),
           ],
@@ -546,6 +669,48 @@
 :global(.editor-container .ProseMirror a:hover) {
   color: #0052a3;
   text-decoration: underline;
+}
+
+:global(.editor-container .ProseMirror sup.note-ref) {
+  vertical-align: super;
+  font-size: 0.75em;
+  line-height: 0;
+  position: relative;
+  top: -0.5em;
+  color: #0066cc;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 500;
+}
+
+:global(.editor-container .ProseMirror sup.note-ref:hover) {
+  color: #0052a3;
+  text-decoration: underline;
+}
+
+:global(.editor-container .ProseMirror div.note-content) {
+  margin-top: 1em;
+  padding-left: 1.5em;
+  font-size: 0.9em;
+  color: #666;
+  display: flex;
+  align-items: flex-start;
+}
+
+:global(.editor-container .ProseMirror div.note-content .note-number) {
+  font-weight: 600;
+  color: #333;
+  margin-right: 0.5em;
+  flex-shrink: 0;
+}
+
+:global(.editor-container .ProseMirror div.note-content .note-text) {
+  flex: 1;
+}
+
+:global(.editor-container .ProseMirror div.note-content .note-text p) {
+  margin: 0;
+  display: inline;
 }
 
 :global(.editor-container .ProseMirror table) {

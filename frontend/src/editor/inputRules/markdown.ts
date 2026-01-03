@@ -224,6 +224,10 @@ export function buildMarkdownInputRules(schema: Schema): InputRule[] {
     );
   }
 
+  // Footnote reference: [^] or [^1]
+  // Note: This is handled via Enter key handler, not as an input rule
+  // because it requires async dialog interaction
+
   // Tables are now handled via command system (@table) or header row shortcut
   // No auto-conversion of markdown table syntax while typing
   // Tables are still parsed from paste operations via markdownParser

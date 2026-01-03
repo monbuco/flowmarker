@@ -13,9 +13,51 @@ import { Schema } from "prosemirror-model";
  */
 export function serializeToMarkdown(node: ProseMirrorNode | Fragment, schema: Schema): string {
   if (node instanceof Fragment) {
-    return serializeFragment(node, schema);
+    const mainContent = serializeFragment(node, schema);
+    // Collect notes from the fragment
+    const notes = collectNotes(node, schema);
+    if (notes.length > 0) {
+      return mainContent + "\n\n" + notes.join("\n");
+    }
+    return mainContent;
   }
-  return serializeNode(node, schema);
+  
+  // For document nodes, serialize main content and append notes section
+  const mainContent = serializeNode(node, schema);
+  const notes = collectNotes(node.content, schema);
+  if (notes.length > 0) {
+    return mainContent + "\n\n" + notes.join("\n");
+  }
+  return mainContent;
+}
+
+/**
+ * Collects all note content nodes and serializes them
+ */
+function collectNotes(nodeOrFragment: ProseMirrorNode | Fragment, schema: Schema): string[] {
+  const notes: string[] = [];
+  const fragment = nodeOrFragment instanceof Fragment ? nodeOrFragment : nodeOrFragment.content;
+  
+  fragment.forEach((node) => {
+    if (node.type.name === "note_content") {
+      const noteNumber = node.attrs.number || 1;
+      const noteText = serializeFragment(node.content, schema).trim();
+      notes.push(`[^${noteNumber}]: ${noteText}`);
+    } else if (node.content) {
+      // Recursively search for notes in nested content
+      const nestedNotes = collectNotes(node.content, schema);
+      notes.push(...nestedNotes);
+    }
+  });
+  
+  // Sort notes by number
+  notes.sort((a, b) => {
+    const numA = parseInt(a.match(/\[\^(\d+)\]/)?.[1] || "0", 10);
+    const numB = parseInt(b.match(/\[\^(\d+)\]/)?.[1] || "0", 10);
+    return numA - numB;
+  });
+  
+  return notes;
 }
 
 /**
@@ -63,6 +105,12 @@ function serializeNode(node: ProseMirrorNode, schema: Schema): string {
     
     case "table":
       return serializeTable(node, schema) + "\n\n";
+    
+    case "note_content":
+      // Serialize note content as [^number]: content
+      const noteNumber = node.attrs.number || 1;
+      const noteText = serializeFragment(node.content, schema).trim();
+      return `[^${noteNumber}]: ${noteText}\n`;
     
     default:
       // Fallback: serialize content
@@ -122,11 +170,15 @@ function serializeInline(fragment: Fragment, schema: Schema): string {
       
       result += text;
     } else {
-      // Handle inline nodes like images
+      // Handle inline nodes like images and note references
       if (node.type.name === "image") {
         const src = node.attrs.src || "";
         const alt = node.attrs.alt || "";
         result += "![" + alt + "](" + src + ")";
+      } else if (node.type.name === "note_ref") {
+        // Serialize note reference as [^number]
+        const number = node.attrs.number || 1;
+        result += `[^${number}]`;
       } else {
         // Fallback: serialize content
         result += serializeFragment(node.content, schema);

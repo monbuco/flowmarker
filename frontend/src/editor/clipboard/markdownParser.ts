@@ -85,6 +85,48 @@ function tokensToNodes(tokens: any[], schema: Schema): ProseMirrorNode[] {
   while (i < tokens.length) {
     const token = tokens[i];
     
+    // Check for footnote definition: [^number]: content
+    // This appears as a paragraph with specific text pattern
+    if (token.type === "paragraph_open") {
+      // Look ahead to see if this paragraph contains a footnote definition
+      let j = i + 1;
+      let foundFootnoteDef = false;
+      let footnoteNumber = 0;
+      let footnoteContent = "";
+      
+      while (j < tokens.length && tokens[j].type !== "paragraph_close") {
+        if (tokens[j].type === "inline") {
+          const inlineText = tokens[j].content || "";
+          const footnoteDefMatch = inlineText.match(/^\[\^(\d+)\]:\s*(.+)$/);
+          if (footnoteDefMatch) {
+            foundFootnoteDef = true;
+            footnoteNumber = parseInt(footnoteDefMatch[1], 10);
+            footnoteContent = footnoteDefMatch[2].trim();
+            break;
+          }
+        }
+        j++;
+      }
+      
+      if (foundFootnoteDef && schema.nodes.note_content) {
+        // Create note content node
+        const noteId = `note-${footnoteNumber}`;
+        const paragraph = schema.nodes.paragraph.create({}, schema.text(footnoteContent));
+        const noteContent = schema.nodes.note_content.create(
+          { noteId, number: footnoteNumber },
+          Fragment.fromArray([paragraph])
+        );
+        nodes.push(noteContent);
+        
+        // Skip to paragraph_close
+        while (i < tokens.length && tokens[i].type !== "paragraph_close") {
+          i++;
+        }
+        i++; // Skip paragraph_close
+        continue;
+      }
+    }
+    
     // Skip non-block tokens (they're handled inline)
     if (token.type !== "heading_open" && 
         token.type !== "paragraph_open" &&
@@ -382,7 +424,48 @@ function parseInlineTokens(tokens: any[], schema: Schema): ProseMirrorNode[] {
   for (const token of tokens) {
     switch (token.type) {
       case "text":
-        currentText += token.content;
+        // Check for footnote reference syntax [^number] in text
+        if (schema.nodes.note_ref) {
+          const text = token.content;
+          const footnoteRefRegex = /\[\^(\d+)\]/g;
+          let lastIndex = 0;
+          let match;
+          
+          while ((match = footnoteRefRegex.exec(text)) !== null) {
+            // Add text before the footnote reference
+            if (match.index > lastIndex) {
+              const beforeText = text.substring(lastIndex, match.index);
+              if (beforeText) {
+                currentText += beforeText;
+              }
+            }
+            
+            // Flush current text if any
+            if (currentText) {
+              nodes.push(schema.text(currentText, marks.slice()));
+              currentText = "";
+            }
+            
+            // Create note reference node
+            const noteNumber = parseInt(match[1], 10);
+            const noteId = `note-${noteNumber}`; // Generate ID based on number
+            const noteRef = schema.nodes.note_ref.create({ noteId, number: noteNumber });
+            nodes.push(noteRef);
+            
+            lastIndex = match.index + match[0].length;
+          }
+          
+          // Add remaining text after last footnote reference
+          if (lastIndex < text.length) {
+            currentText += text.substring(lastIndex);
+          } else if (lastIndex === 0) {
+            // No footnote references found, add entire text
+            currentText += text;
+          }
+        } else {
+          // No note_ref node type, just add text
+          currentText += token.content;
+        }
         break;
 
       case "strong_open":
@@ -463,6 +546,51 @@ function parseInlineTokens(tokens: any[], schema: Schema): ProseMirrorNode[] {
         }
         if (schema.marks.link) {
           marks.pop();
+        }
+        break;
+
+      case "text":
+        // Check for footnote reference syntax [^number] in text
+        if (schema.nodes.note_ref) {
+          const text = token.content;
+          const footnoteRefRegex = /\[\^(\d+)\]/g;
+          let lastIndex = 0;
+          let match;
+          
+          while ((match = footnoteRefRegex.exec(text)) !== null) {
+            // Add text before the footnote reference
+            if (match.index > lastIndex) {
+              const beforeText = text.substring(lastIndex, match.index);
+              if (beforeText) {
+                currentText += beforeText;
+              }
+            }
+            
+            // Flush current text if any
+            if (currentText) {
+              nodes.push(schema.text(currentText, marks.slice()));
+              currentText = "";
+            }
+            
+            // Create note reference node
+            const noteNumber = parseInt(match[1], 10);
+            const noteId = `note-${noteNumber}`; // Generate ID based on number
+            const noteRef = schema.nodes.note_ref.create({ noteId, number: noteNumber });
+            nodes.push(noteRef);
+            
+            lastIndex = match.index + match[0].length;
+          }
+          
+          // Add remaining text after last footnote reference
+          if (lastIndex < text.length) {
+            currentText += text.substring(lastIndex);
+          } else if (lastIndex === 0) {
+            // No footnote references found, add entire text
+            currentText += text;
+          }
+        } else {
+          // No note_ref node type, just add text
+          currentText += token.content;
         }
         break;
 

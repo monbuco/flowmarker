@@ -16,6 +16,7 @@ import { EditorView } from "prosemirror-view";
 import { InputRule } from "prosemirror-inputrules";
 import { Schema, Fragment } from "prosemirror-model";
 import { dialogStore } from "./dialogStore";
+import { generateNoteId, insertOrUpdateNote, findNoteReferences, renumberNotes, getNoteContent } from "./notes";
 
 export interface CommandHandler {
   name: string;
@@ -245,6 +246,13 @@ export async function processCommand(view: EditorView, commandName: string): Pro
     }
   }
   
+  // Check for @note command anywhere in the line
+  // Note: This is now handled directly in Editor.svelte Enter handler
+  // This function is kept for compatibility but may not be called
+  if (commandName === "note") {
+    return await insertNote(view);
+  }
+  
   return false;
 }
 
@@ -259,5 +267,146 @@ export async function insertTableFromHeaderRow(
   paragraphEnd: number
 ): Promise<boolean> {
   return await handleTableCommandWithColumns(view, columnCount, paragraphStart, paragraphEnd);
+}
+
+/**
+ * Insert a new note reference at the cursor position
+ */
+export async function insertNote(view: EditorView): Promise<boolean> {
+  if (!view) {
+    console.error("insertNote: view is null");
+    return false;
+  }
+  
+  try {
+    // Get fresh state
+    const { state, dispatch } = view;
+    const { schema } = state;
+    
+    if (!schema.nodes.note_ref) {
+      console.error("insertNote: note_ref node type not found in schema");
+      return false;
+    }
+    
+    // Get cursor position before showing dialog
+    const { $from } = state.selection;
+    const insertPos = $from.pos;
+    
+    // Show dialog for note content
+    console.log("insertNote: About to show dialog...");
+    console.log("insertNote: dialogStore:", dialogStore);
+    console.log("insertNote: dialogStore.show:", typeof dialogStore.show);
+    
+    let noteContent: string | null = null;
+    try {
+      console.log("insertNote: Calling dialogStore.show...");
+      noteContent = await dialogStore.show({
+        title: "note",
+        placeholder: "Enter note content...",
+        defaultValue: "",
+        type: "textarea",
+        multiline: true,
+      });
+      console.log("insertNote: Dialog closed, content:", noteContent);
+    } catch (error) {
+      console.error("insertNote: Error showing dialog:", error);
+      if (error instanceof Error) {
+        console.error("insertNote: Error message:", error.message);
+        console.error("insertNote: Error stack:", error.stack);
+      }
+      view.focus();
+      return false;
+    }
+    
+    if (noteContent === null || noteContent === "") {
+      // User cancelled or entered empty content - restore focus
+      view.focus();
+      return false;
+    }
+    
+    // Get fresh state after dialog (in case document changed)
+    const currentState = view.state;
+    const currentSchema = currentState.schema;
+    
+    // Try to find the position where we want to insert
+    // If the document changed, try to find a position near where we were
+    let finalInsertPos = insertPos;
+    try {
+      // Check if the position is still valid
+      currentState.doc.resolve(insertPos);
+    } catch {
+      // Position is invalid, use current cursor position
+      finalInsertPos = currentState.selection.$from.pos;
+    }
+    
+    // Generate unique note ID
+    const noteId = generateNoteId();
+    
+    // Count existing notes to determine number
+    const existingRefs = findNoteReferences(currentState.doc, currentSchema);
+    const nextNumber = existingRefs.length + 1;
+    
+    // Create note reference node
+    const noteRef = currentSchema.nodes.note_ref.create({ noteId, number: nextNumber });
+    
+    // Insert reference at cursor position
+    const tr = currentState.tr.insert(finalInsertPos, noteRef);
+    
+    if (dispatch) {
+      dispatch(tr);
+      
+      // Insert note content in notes section (async to avoid transaction conflicts)
+      setTimeout(() => {
+        insertOrUpdateNote(view, noteId, noteContent, nextNumber);
+      }, 10);
+      
+      view.focus();
+      return true;
+    }
+    
+    return false;
+  } catch (error) {
+    console.error("insertNote: Error:", error);
+    return false;
+  }
+}
+
+/**
+ * Edit an existing note by noteId
+ */
+export async function editNote(view: EditorView, noteId: string): Promise<boolean> {
+  const { state } = view;
+  const { schema } = state;
+  
+  if (!schema.nodes.note_ref) {
+    return false;
+  }
+  
+  // Get current note content
+  const currentContent = getNoteContent(state.doc, schema, noteId) || "";
+  
+  // Show dialog with current content
+  const newContent = await dialogStore.show({
+    title: "note",
+    placeholder: "Enter note content...",
+    defaultValue: currentContent,
+    type: "textarea",
+    multiline: true,
+  });
+  
+  if (newContent === null) {
+    // User cancelled
+    return false;
+  }
+  
+  // Find the note reference to get its number
+  const refs = findNoteReferences(state.doc, schema);
+  const ref = refs.find(r => r.noteId === noteId);
+  const number = ref ? ref.number : 1;
+  
+  // Update note content
+  insertOrUpdateNote(view, noteId, newContent, number);
+  
+  return true;
 }
 
