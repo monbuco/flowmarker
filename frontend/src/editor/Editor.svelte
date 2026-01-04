@@ -14,11 +14,17 @@
     import { buildInputRules } from "./inputRules";
     import { notePlugin } from "./notePlugin";
     import Toolbar from "./Toolbar.svelte";
+    import AppMenu from "./AppMenu.svelte";
     import LinkEditor from "./LinkEditor.svelte";
     import TableMenu from "./TableMenu.svelte";
     import InputDialog from "./InputDialog.svelte";
     import NotePopover from "./NotePopover.svelte";
     import NotesSection from "./NotesSection.svelte";
+    import { autosavePlugin } from "../lib/persistence/autosavePlugin";
+    import { saveDocument, openFile } from "../lib/persistence/fileIO";
+    import { deserializeDocument } from "../lib/persistence/serializer";
+    import { setNote, clearNotes } from "./notesStore";
+    import { Node } from "prosemirror-model";
   
     let editorEl: HTMLDivElement;
     let view: EditorView | null = null;
@@ -72,6 +78,19 @@
               await copyAsMarkdown(view);
             })();
             return true; // Prevent default copy
+          },
+          // Save document (Ctrl+S / Cmd+S)
+          "Mod-s": (state: EditorState, dispatch: any) => {
+            if (!view) return false;
+            // Prevent browser default save
+            (async () => {
+              try {
+                await saveDocument(state);
+              } catch (error) {
+                console.error("Error saving document:", error);
+              }
+            })();
+            return true; // Prevent default browser save
           },
           // Handle Enter key
           "Enter": (state: EditorState, dispatch: any) => {
@@ -483,6 +502,7 @@
             keymap(baseKeymap),
             history(),
             notePlugin(),
+            autosavePlugin(),
             columnResizing(),
             tableEditing(),
           ],
@@ -543,6 +563,60 @@
       }
     });
 
+    /**
+     * Load document from .flm file
+     */
+    async function loadDocument() {
+      if (!view) return;
+      
+      try {
+        const doc = await openFile();
+        if (!doc) return; // User cancelled
+
+        // Deserialize document
+        const { doc: docJSON, notes } = deserializeDocument(doc);
+
+        // Create ProseMirror node from JSON
+        const newDoc = Node.fromJSON(schema, docJSON);
+
+        // Update editor state
+        const newState = EditorState.create({
+          doc: newDoc,
+          schema,
+          plugins: view.state.plugins,
+        });
+
+        // Apply new state
+        view.updateState(newState);
+
+        // Load notes into store
+        clearNotes();
+        if (notes) {
+          notes.forEach((note) => {
+            setNote({
+              noteId: note.noteId,
+              content: note.content,
+              number: note.number,
+            });
+          });
+        }
+
+        // Trigger renumbering to ensure notes are in sync
+        if (notes && notes.length > 0) {
+          // Import and call renumber function
+          const { renumberNotes } = await import("./notes");
+          renumberNotes(view.state);
+        }
+      } catch (error) {
+        console.error("Error loading document:", error);
+      }
+    }
+
+    // Expose load function globally for menu/toolbar (optional)
+    if (typeof window !== "undefined") {
+      (window as any).loadFlowmarkDocument = loadDocument;
+    }
+
     onDestroy(() => {
       if (view) {
         view.destroy();
@@ -552,6 +626,7 @@
   </script>
   
   <div class="editor-wrapper">
+    <AppMenu {view} />
     <Toolbar {view} />
     <div class="editor">
       <div bind:this={editorEl} class="editor-container">
@@ -584,7 +659,7 @@
   min-height: 100vh;
   margin: 0 auto;
   padding: 96px 96px 96px 96px;
-  padding-top: 120px; /* Add extra padding at top to account for fixed toolbar */
+  padding-top: 152px; /* Add extra padding at top to account for AppMenu (32px) + Toolbar (120px) */
   background-color: #ffffff;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
   display: flex;

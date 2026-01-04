@@ -366,7 +366,7 @@
 <style>
   .toolbar {
     position: fixed;
-    top: 0;
+    top: 32px; /* Position below AppMenu */
     left: 0;
     right: 0;
     width: 100%;
