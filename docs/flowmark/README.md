@@ -102,8 +102,8 @@ This file contains metadata about the document that is useful for editors and to
 ```yaml
 format: flowmark
 version: 0.1
-createdAt: 2024-01-15T10:30:00Z
-updatedAt: 2024-01-20T14:45:00Z
+createdAt: 2026-01-15T10:30:00Z
+updatedAt: 2026-01-20T14:45:00Z
 editor:
   cursorPosition: 1234
   viewMode: wysiwyg
@@ -201,7 +201,7 @@ The .flm format explicitly does not aim to be:
 
 ## Version History
 
-- **0.1** (2024) — Initial specification
+- **0.1** (2026) — Initial specification
   - Required `document.md`
   - Optional `assets/` and `meta.yaml`
   - Standard ZIP archive structure
