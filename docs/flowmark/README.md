@@ -7,6 +7,10 @@
 
 FlowMark is based on the following principles:
 
+- **FlowMark is not designed to privatize knowledge, but to preserve and share it.** The format intentionally avoids DRM, encryption, or artificial restrictions. Any document can be read, extracted, or edited by design. 
+
+FlowMark protects the integrity of works by clarity of intent, not by technical restriction.
+
 - **Writing should be as simple and durable as paper and pencil.** The format must remain readable and editable for decades, without dependency on specific software or proprietary formats.
 
 - **Content must remain readable without specialized software.** A .flm file can be opened with any ZIP tool, and its contents can be read with any text editor.
@@ -243,4 +247,5 @@ A .flm file should be:
 ---
 
 **This specification is part of the FlowMarker project and may be updated as the format evolves. Contributions and feedback are welcome.**
+
 
