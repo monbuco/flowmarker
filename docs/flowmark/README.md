@@ -1,7 +1,7 @@
 # FlowMark File Format Specification
 
 **Version:** 0.1  
-**Last Updated:** 2024
+**Last Updated:** 2026
 
 ## Philosophy
 
